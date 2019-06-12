@@ -14,6 +14,7 @@ FLAGS = flags.FLAGS
 
 
 
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 
 
@@ -25,7 +26,7 @@ flags.DEFINE_integer(
 )
 
 
-flags.DEFINE_float("learning_rate", 5e-5, "The initial learning rate for Adam.")
+flags.DEFINE_float("learning_rate", 0.001, "The initial learning rate for Adam.")
 flags.DEFINE_float("num_train_epochs", 100.0, "Total number of training epochs to perform.")
 flags.DEFINE_float('droupout_rate', 0.5, 'Dropout rate')
 flags.DEFINE_float('clip', 5, 'Gradient clip')
@@ -65,8 +66,22 @@ flags.DEFINE_list("label_map",[label_map],"label_map list") # 因为flag不能�
 flags.DEFINE_integer('num_labels', len(label_map), 'number of rnn labels')
 
 
-def evaulateTest( sess, test_input_x,test_input_label,test_input_len,test_token, e,
+def evaulateTest( model,sess, test_input_x,test_input_label,test_input_len,test_token, e,
                  idx_to_tag, combine_type_list=None):
+    '''
+    :param model:  模型
+    :param sess:  session 会话
+    :param test_input_x:  input_x
+    :param test_input_label: input_label
+    :param test_input_len: input_len
+    :param test_token: 原文
+    :param e: 评估对象
+    :param idx_to_tag:
+    :param combine_type_list: 一般输入[place,org] 表示需要将place 和 org 合并，并以最后一个标签为最终标签，例如 上海红心厂 会被标注成 place和org ，但其实这里是个org 所以这里需要将place org合并
+    :return:
+    '''
+
+
     loss = []
     predictlist = []
     real_labels = []
@@ -75,7 +90,7 @@ def evaulateTest( sess, test_input_x,test_input_label,test_input_len,test_token,
     for test_x_batch, test_labels_batch,test_len_batch, test_token_batch in utils.minibatchesNdArray(
             test_input_x, test_input_label, test_input_len, test_token, FLAGS.batch_size):
         feed = getFeed(test_x_batch, test_len_batch, test_labels_batch)
-        los, pred, lengths = predict(sess, feed)
+        los, pred, lengths = predict(model,sess, feed)
         loss.append(los)
         tokens.extend(test_token_batch.tolist())
         predictlist.extend(pred.tolist())
@@ -84,9 +99,9 @@ def evaulateTest( sess, test_input_x,test_input_label,test_input_len,test_token,
     # 这里打印测试的信息
     print("测试集合loss为:%.3f" % np.mean(loss))
     # 这里是train的评估
-    pred = split(predict, total_lengths)
+    pred = split(predictlist, total_lengths)
     real_label = split(real_labels, total_lengths)
-    e.evaulateOflogits(pred, real_label, idx_to_tag, combine_type_list, tokens, True)
+    e.evaulateOflogits(pred, real_label, idx_to_tag, combine_type_list, tokens, False)
 
 def split(label,length):
     result=[]
@@ -98,7 +113,7 @@ def split(label,length):
 
 
 def predict(model,sess,feed):
-    los, pred, lengths = sess.run([model.total_loss, model.pred_ids, model.lengths], feed_dict=feed)
+    los, pred, lengths = sess.run([model.totle_loss, model.predict, model.lengths], feed_dict=feed)
     return los,pred,lengths
 
 def createInPut(inputDatas,max_seq_length,word2Index,label_map):
@@ -132,20 +147,23 @@ def createInPut(inputDatas,max_seq_length,word2Index,label_map):
 is_training=True
 
 
-word2vec_path="/home/huwenxiang/deeplearn/wordembed/中英文/谷歌百度/词向量/small.300.bin"
+word2vec_path="./word2vec/small.300.bin"
 word = utils.loadData(word2vec_path)
 word2Index=word["word2Index"]
 word_vectors=word["word2Vec"]
 
 
-test_data=utils.read_data("./NERdata/train.txt")
+test_data=utils.read_data("./NERdata/test.txt")
 train_data=utils.read_data("./NERdata/train.txt")
 train_input_x,train_input_label,train_input_len,train_token=createInPut(train_data,FLAGS.max_seq_length,word2Index,label_map)
 test_input_x,test_input_label,test_input_len,test_token=createInPut(test_data,FLAGS.max_seq_length,word2Index,label_map)
 
 
+
+
+
 num_train_steps = int(  # 这个是总的迭代次数，训练完一轮的次数*总的次数
-    len(train_data) / FLAGS.batch_size * FLAGS.num_train_epochs)
+    len(train_input_x) / FLAGS.batch_size * FLAGS.num_train_epochs)
 
 
 
@@ -155,8 +173,8 @@ num_train_steps = int(  # 这个是总的迭代次数，训练完一轮的次数
 
 
 input_x = tf.placeholder(shape=[None, FLAGS.max_seq_length], dtype=tf.int64, name="input_x")
-input_labels = tf.placeholder(shape=[None,FLAGS.num_labels], dtype=tf.int64, name="input_y")
-input_len = tf.placeholder(shape=[None,1], dtype=tf.int64, name="input_len")
+input_labels = tf.placeholder(shape=[None,FLAGS.max_seq_length], dtype=tf.int64, name="input_y")
+input_len = tf.placeholder(shape=[None], dtype=tf.int64, name="input_len")
 def getFeed(x, len, labels=None):
     if labels is None:
         feed = {input_x: x,
@@ -171,16 +189,17 @@ def getFeed(x, len, labels=None):
 
 
 
-wordemb = tf.Variable(word_vectors, name="word2vec", trainable=False)
+wordemb = tf.Variable(np.asarray(word_vectors), name="word2vec", trainable=False)
 input_emb = tf.nn.embedding_lookup(wordemb, input_x)
 blstm_model = BLSTM(embedded_chars=input_emb, hidden_unit=FLAGS.lstm_size, cell_type=FLAGS.cell,
                       num_layers=FLAGS.num_layers,
                       droupout_rate=FLAGS.droupout_rate, initializers=initializers, num_labels=FLAGS.num_labels,
                       seq_length=FLAGS.max_seq_length, labels=input_labels, lengths=input_len, is_training=is_training)
 
-blstm_model.add_blstm_layer()
+blstm_model.add_blstm_layer()# blstm
+# blstm_model.add_blstm_crf_layer() # blstm+crf
 
-train_op = tf.train.AdamOptimizer(FLAGS.learning_rate).minimize(blstm_model.total_loss)
+train_op = tf.train.AdamOptimizer(FLAGS.learning_rate).minimize(blstm_model.totle_loss)
 
 init_op = tf.global_variables_initializer()
 idx_to_tag = {idx: tag for tag, idx in FLAGS.label_map[0].items()}
@@ -194,15 +213,15 @@ predict_list = []
 with tf.Session() as sess:
     sess.run(init_op)
     for i in range(num_train_steps):
-        shuffIndex = np.random.permutation(np.arange(len(train_data)))
+        shuffIndex = np.random.permutation(np.arange(len(train_input_x)))
         shuffIndex=shuffIndex[0:FLAGS.batch_size]
         feed = getFeed(train_input_x[shuffIndex], train_input_len[shuffIndex], train_input_label[shuffIndex])
-        _,los,pred,lengths=sess.run([train_op,self.total_loss,self.pred_ids,self.lengths],feed_dict=feed)
+        _,los,pred,lengths=sess.run([train_op,blstm_model.totle_loss,blstm_model.predict,blstm_model.lengths],feed_dict=feed)
         print(i)
         if i%100==0 and i>1  :#
             # 这里测试一batch的train和全部的test
             print("训练集合loss为:%.3f"%los)
 
             # 这里是test的评估
-            evaulateTest(sess, test_input_x,test_input_label,test_input_len,test_token, e,
+            evaulateTest(blstm_model,sess, test_input_x,test_input_label,test_input_len,test_token, e,
                               idx_to_tag)

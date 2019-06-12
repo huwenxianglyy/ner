@@ -209,7 +209,7 @@ class evaluateUtils:
                 else:# 这里将错误的样本加入后期可以打印出来看看
                     #获取错误的标签，保存到对应的文件
                     type=l[0]
-                    if is_output :
+                    if is_output :# 如果需要输出，会把错误的seq输出，具体分析。
                         real = r[index]
                         predict = p[index]
                         token = tokens[index][1:len(real) + 1]
@@ -286,10 +286,10 @@ class evaluateUtils:
             recell=rightNum/realNum if realNum!=0 else 0
             f1=2*acc*recell/(acc+recell+1e-10)
             print("%s\t\t%.3f\t\t%.3f\t\t%.3f\t\t%d"%(key,acc,recell,f1,realNum))
-        for error in errorList:
-            print(error[0])
-            print(error[1])
-            print(error[2])
+        for error in errorList:# 这里打印一个错误的看看
+            print("原文:%s"%error[0])
+            print("答案:%s"%error[1])
+            print("预测:%s"%error[2])
 
 
 

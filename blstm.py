@@ -51,9 +51,58 @@ class BLSTM(object):
         #project
         logits = self.project_bilstm_layer(lstm_output)
 
-        ((loss, logits, trans, pred_ids))
+
+        self.loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=self.labels, name="soft_loss")
+        self.seq_mask= tf.sequence_mask(self.lengths, self.seq_length, dtype=tf.float32)
+        self.mask_loss=self.loss*self.seq_mask
+
+        self.totle_loss = tf.reduce_mean(self.mask_loss, name="loss")
+        self.predict = tf.argmax(tf.nn.softmax(logits), axis=-1, name="predictions")
 
 
+
+
+
+    def add_blstm_crf_layer(self):
+        """
+        blstm-crf网络
+        :return:
+        """
+        if self.is_training:
+            # lstm input dropout rate set 0.5 will get best score
+            self.embedded_chars = tf.nn.dropout(self.embedded_chars, self.droupout_rate)
+        #blstm
+        lstm_output = self.blstm_layer(self.embedded_chars)
+        #project
+        logits = self.project_bilstm_layer(lstm_output)
+        #crf
+        loss, trans = self.crf_layer(logits)
+        # CRF decode, pred_ids 是一条最大概率的标注路径
+        pred_ids, _ = crf.crf_decode(potentials=logits, transition_params=trans, sequence_length=self.lengths)
+        self.totle_loss =loss
+        self.predict = pred_ids
+        self.trans=trans
+
+
+
+
+    def crf_layer(self, logits):
+        """
+        calculate crf loss
+        :param project_logits: [1, num_steps, num_tags]
+        :return: scalar loss
+        """
+        with tf.variable_scope("crf_loss"):
+            trans = tf.get_variable(
+                "transitions",
+                shape=[self.num_labels, self.num_labels],
+                initializer=self.initializers.xavier_initializer())
+            log_likelihood, trans = tf.contrib.crf.crf_log_likelihood(
+                inputs=logits,
+                tag_indices=self.labels,
+                transition_params=trans,
+                sequence_lengths=self.lengths)
+            return tf.reduce_mean(-log_likelihood), trans
 
 
     def _witch_cell(self):
