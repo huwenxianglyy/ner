@@ -196,8 +196,8 @@ blstm_model = BLSTM(embedded_chars=input_emb, hidden_unit=FLAGS.lstm_size, cell_
                       droupout_rate=FLAGS.droupout_rate, initializers=initializers, num_labels=FLAGS.num_labels,
                       seq_length=FLAGS.max_seq_length, labels=input_labels, lengths=input_len, is_training=is_training)
 
-blstm_model.add_blstm_layer()# blstm
-# blstm_model.add_blstm_crf_layer() # blstm+crf
+# blstm_model.add_blstm_layer()#    这里使用blstm
+blstm_model.add_blstm_crf_layer() # 这里使用blstm+crf
 
 train_op = tf.train.AdamOptimizer(FLAGS.learning_rate).minimize(blstm_model.totle_loss)
 
