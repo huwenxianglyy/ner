@@ -14,9 +14,9 @@ if os.name == 'nt':
     root_path = os.path.dirname(os.path.realpath(__file__))
     log_root_path=""
 else:
-    bert_path = '/home/huwenxiang/deeplearn/bert-model/chinese_L-12_H-768_A-12'
+    bert_path = '/home/bert/chinese_L-12_H-768_A-12'
     root_path = os.path.dirname(os.path.realpath(__file__))
-    log_root_path="/home/huwenxiang/deeplearn/court_data/model/"
+    log_root_path="" # 保存模型的地方
 
 flags.DEFINE_string(
     "data_dir", os.path.join(root_path, 'NERdata'),
